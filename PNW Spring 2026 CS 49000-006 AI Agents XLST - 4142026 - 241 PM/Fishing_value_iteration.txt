@@ -1,0 +1,78 @@
+import numpy as np
+
+# States: 0: Empty, 1: Low, 2: Medium, 3: High
+states = [0, 1, 2, 3]
+state_names = ["Empty", "Low", "Medium", "High"]
+actions = [0, 1] # 0: Not to Fish, 1: Fish
+gamma = 0.9  # Discount factor
+epsilon = 0.01 # Convergence threshold
+
+# Transition Probabilities: P[state][action][next_state]
+P = np.zeros((4, 2, 4))
+#print (P)
+# Rewards: R[state][action][next_state]
+R = np.zeros((4, 2, 4))
+#print (R)
+
+# --- State: Empty ---
+P[0, 0, 1], R[0, 0, 1] = 0.9, 0    # Not to Fish -> Low
+P[0, 0, 0], R[0, 0, 0] = 0.1, 0    # Not to Fish -> Empty
+# (Fish not allowed in Empty)
+
+# --- State: Low ---
+P[1, 0, 2], R[1, 0, 2] = 0.8, 0    # Not to Fish -> Medium
+P[1, 0, 1], R[1, 0, 1] = 0.2, 0    # Not to Fish -> Low
+P[1, 1, 0], R[1, 1, 0] = 0.8, -200 # Fish -> Empty (Penalty!)
+P[1, 1, 1], R[1, 1, 1] = 0.2, 5    # Fish -> Low
+
+# --- State: Medium ---
+P[2, 0, 3], R[2, 0, 3] = 0.8, 0    # Not to Fish -> High
+P[2, 0, 2], R[2, 0, 2] = 0.2, 0    # Not to Fish -> Medium
+P[2, 1, 1], R[2, 1, 1] = 0.7, 50   # Fish -> Low
+P[2, 1, 2], R[2, 1, 2] = 0.3, 50   # Fish -> Medium
+
+# --- State: High ---
+P[3, 0, 3], R[3, 0, 3] = 0.9, 0    # Not to Fish -> High
+P[3, 0, 2], R[3, 0, 2] = 0.1, 0    # Not to Fish -> Medium
+P[3, 1, 2], R[3, 1, 2] = 0.7, 100  # Fish -> Medium
+P[3, 1, 3], R[3, 1, 3] = 0.3, 100  # Fish -> High
+
+# Value Iteration
+V = np.zeros(4)
+print (V)
+while True:
+    delta = 0
+    new_V = np.copy(V)
+    for s in states:
+        action_values = []
+        # Check available actions (Action 1/Fish not allowed in State 0/Empty)
+        available_actions = [0] if s == 0 else [0, 1]
+
+        for a in available_actions:
+            v_a = sum(P[s, a, s_next] * (R[s, a, s_next] + gamma * V[s_next])
+                      for s_next in states)
+            action_values.append(v_a)
+
+        new_V[s] = max(action_values)
+        delta = max(delta, abs(new_V[s] - V[s]))
+    V = new_V
+    if delta < epsilon:
+        break
+
+# Extract Policy
+policy = {}
+for s in states:
+    available_actions = [0] if s == 0 else [0, 1]
+    best_action = None
+    best_value = -float('inf')
+    for a in available_actions:
+        v_a = sum(P[s, a, s_next] * (R[s, a, s_next] + gamma * V[s_next])
+                  for s_next in states)
+        if v_a > best_value:
+            best_value = v_a
+            best_action = "Fish" if a == 1 else "Not to Fish"
+    policy[state_names[s]] = best_action
+
+print("Optimal Policy:")
+for state, action in policy.items():
+    print(f"{state:7}: {action}")

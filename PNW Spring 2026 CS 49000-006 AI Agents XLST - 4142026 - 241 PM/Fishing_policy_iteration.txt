@@ -1,0 +1,66 @@
+import numpy as np
+# States: 0: Empty, 1: Low, 2: Medium, 3: High
+states = [0, 1, 2, 3]
+P = np.zeros((4, 2, 4))
+#print(P)
+#print (P[0, 0, 1])
+# Rewards: R[state][action][next_state]
+R = np.zeros((4, 2, 4))
+#print (R)
+state_names = ["Empty", "Low", "Medium", "High"]
+actions = [0, 1] # 0: Not to Fish, 1: Fish
+V = np.zeros(len(states))
+# Start with a random policy (0 = Not to Fish)
+policy = {s: 0 for s in states}
+epsilon = 0.001
+gamma = 0.9 # Assuming a standard discount factor
+
+while True:
+    # --- STEP 1: POLICY EVALUATION ---
+    # Calculate the value of states GIVEN the current policy
+    while True:
+        delta = 0
+        for s in states:
+            v = V[s]
+            # We only look at the action chosen by our current policy
+            a = policy[s]
+            V[s] = sum(P[s, a, s_next] * (R[s, a, s_next] + gamma * V[s_next])
+                       for s_next in states)
+            delta = max(delta, abs(v - V[s]))
+        if delta < epsilon:
+            break
+
+    # --- STEP 2: POLICY IMPROVEMENT ---
+    # Check if we can find a better action based on the values we just calculated
+    policy_stable = True
+
+    for s in states:
+        old_action = policy[s]
+
+        # Check available actions (Action 1/Fish not allowed in State 0/Empty)
+        available_actions = [0] if s == 0 else [0, 1]
+
+        best_action = None
+        best_value = -float('inf')
+
+        for a in available_actions:
+            v_a = sum(P[s, a, s_next] * (R[s, a, s_next] + gamma * V[s_next])
+                      for s_next in states)
+            if v_a > best_value:
+                best_value = v_a
+                best_action = a
+
+        policy[s] = best_action
+
+        # If the action changed, the policy isn't stable yet
+        if old_action != best_action:
+            policy_stable = False
+
+    if policy_stable:
+        break
+
+# Format the output
+print("Optimal Policy:")
+for s, a in policy.items():
+    action_name = "Fish" if a == 1 else "Not to Fish"
+    print(f"{state_names[s]:7}: {action_name}")

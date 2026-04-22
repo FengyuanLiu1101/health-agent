@@ -1,0 +1,6 @@
+.env  
+health_agent.db  
+faiss_index/  
+__pycache__/  
+*.pyc  
+demo0421.mp4 

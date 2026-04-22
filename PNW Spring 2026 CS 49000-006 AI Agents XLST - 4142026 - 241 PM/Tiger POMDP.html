@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html><head></head><body style="color: rgb(32, 33, 34); font-family: verdana, sans-serif; font-size: 19px;"><div>
+<div>&nbsp;Tiger POMDP solved with belief-space value iteration</div>
+<div># Runs in Google Colab</div>
+<br>
+<div>import numpy as np</div>
+<div>import matplotlib.pyplot as plt</div>
+<br>
+<div># -----------------------------</div>
+<div># POMDP PARAMETERS</div>
+<div># -----------------------------</div>
+<br>
+<div>states = ["TL", "TR"]</div>
+<div>actions = ["listen", "open_left", "open_right"]</div>
+<div>observations = ["hear_left", "hear_right"]</div>
+<br>
+<div>gamma = 0.95</div>
+<br>
+<div># Transition model T[s, a, s']</div>
+<div>T = {</div>
+<div>&nbsp; &nbsp; "listen": np.array([[1, 0],</div>
+<div>&nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; [0, 1]]),</div>
+<br>
+<div>&nbsp; &nbsp; "open_left": np.array([[0.5, 0.5],</div>
+<div>&nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;[0.5, 0.5]]), &nbsp; # reset</div>
+<br>
+<div>&nbsp; &nbsp; "open_right": np.array([[0.5, 0.5],</div>
+<div>&nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; [0.5, 0.5]]) &nbsp; &nbsp;# reset</div>
+<div>}</div>
+<br>
+<div># Observation model O[a][s'][o]</div>
+<div># Only informative when listening</div>
+<div>O = {</div>
+<div>&nbsp; &nbsp; "listen": {</div>
+<div>&nbsp; &nbsp; &nbsp; &nbsp; "TL": {"hear_left": 0.85, "hear_right": 0.15},</div>
+<div>&nbsp; &nbsp; &nbsp; &nbsp; "TR": {"hear_left": 0.15, "hear_right": 0.85}</div>
+<div>&nbsp; &nbsp; },</div>
+<div>&nbsp; &nbsp; "open_left": {</div>
+<div>&nbsp; &nbsp; &nbsp; &nbsp; "TL": {"hear_left": 0.5, "hear_right": 0.5},</div>
+<div>&nbsp; &nbsp; &nbsp; &nbsp; "TR": {"hear_left": 0.5, "hear_right": 0.5}</div>
+<div>&nbsp; &nbsp; },</div>
+<div>&nbsp; &nbsp; "open_right": {</div>
+<div>&nbsp; &nbsp; &nbsp; &nbsp; "TL": {"hear_left": 0.5, "hear_right": 0.5},</div>
+<div>&nbsp; &nbsp; &nbsp; &nbsp; "TR": {"hear_left": 0.5, "hear_right": 0.5}</div>
+<div>&nbsp; &nbsp; }</div>
+<div>}</div>
+<br>
+<div># Reward function R[s,a]</div>
+<div>R = {</div>
+<div>&nbsp; &nbsp; "listen": np.array([-1, -1]),</div>
+<div>&nbsp; &nbsp; "open_left": np.array([-100, +10]),</div>
+<div>&nbsp; &nbsp; "open_right": np.array([+10, -100])</div>
+<div>}</div>
+<br><br>
+<div># -----------------------------</div>
+<div># BELIEF UPDATE FUNCTION --&gt; main part of POMDP</div>
+<br>
+<div># -----------------------------</div>
+<div>def belief_update(belief, action, observation):</div>
+<div>&nbsp; &nbsp; new_belief = np.zeros(2)</div>
+<br>
+<div>&nbsp; &nbsp; for s_prime in range(2):</div>
+<div>&nbsp; &nbsp; &nbsp; &nbsp; obs_prob = O[action][states[s_prime]][observation]</div>
+<div>&nbsp; &nbsp; &nbsp; &nbsp; transition_sum = 0</div>
+<br>
+<div>&nbsp; &nbsp; &nbsp; &nbsp; for s in range(2):</div>
+<div>&nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; transition_sum += belief[s] * T[action][s, s_prime]</div>
+<br>
+<div>&nbsp; &nbsp; &nbsp; &nbsp; new_belief[s_prime] = obs_prob * transition_sum # belief update</div>
+<br>
+<div>&nbsp; &nbsp; # normalize</div>
+<div>&nbsp; &nbsp; new_belief /= np.sum(new_belief)</div>
+<div>&nbsp; &nbsp; return new_belief</div>
+<br><br>
+<div># -----------------------------</div>
+<div># VALUE ITERATION IN BELIEF SPACE</div>
+<div># -----------------------------</div>
+<br>
+<div># discretize belief space</div>
+<div>belief_points = np.linspace(0.01, 0.99, 200)</div>
+<div>V = np.zeros(len(belief_points))</div>
+<div>policy = ["listen"] * len(belief_points)</div>
+<br>
+<div>theta = 1e-4</div>
+<div>max_iters = 200</div>
+<br>
+<div>for iteration in range(max_iters):</div>
+<div>&nbsp; &nbsp; delta = 0</div>
+<div>&nbsp; &nbsp; new_V = np.copy(V)</div>
+<br>
+<div>&nbsp; &nbsp; for i, b in enumerate(belief_points):</div>
+<div>&nbsp; &nbsp; &nbsp; &nbsp; belief = np.array([b, 1-b])</div>
+<br>
+<div>&nbsp; &nbsp; &nbsp; &nbsp; action_values = []</div>
+<br>
+<div>&nbsp; &nbsp; &nbsp; &nbsp; for a in actions:</div>
+<div>&nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; # expected immediate reward</div>
+<div>&nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; r = np.dot(belief, R[a])</div>
+<br>
+<div>&nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; # expected future value</div>
+<div>&nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; future_value = 0</div>
+<br>
+<div>&nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; for obs in observations:</div>
+<div>&nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; updated_belief = belief_update(belief, a, obs)</div>
+<div>&nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; b_idx = np.argmin(np.abs(belief_points - updated_belief[0]))</div>
+<br>
+<div>&nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; obs_prob = 0</div>
+<div>&nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; for s_prime in range(2):</div>
+<div>&nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; obs_prob += O[a][states[s_prime]][obs] * \</div>
+<div>&nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; np.dot(belief, T[a][:, s_prime])</div>
+<br>
+<div>&nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; future_value += obs_prob * V[b_idx]</div>
+<br>
+<div>&nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; action_values.append(r + gamma * future_value)</div>
+<br>
+<div>&nbsp; &nbsp; &nbsp; &nbsp; best_value = max(action_values)</div>
+<div>&nbsp; &nbsp; &nbsp; &nbsp; best_action = actions[np.argmax(action_values)]</div>
+<br>
+<div>&nbsp; &nbsp; &nbsp; &nbsp; new_V[i] = best_value</div>
+<div>&nbsp; &nbsp; &nbsp; &nbsp; policy[i] = best_action</div>
+<br>
+<div>&nbsp; &nbsp; &nbsp; &nbsp; delta = max(delta, abs(new_V[i] - V[i]))</div>
+<br>
+<div>&nbsp; &nbsp; V = new_V</div>
+<br>
+<div>&nbsp; &nbsp; if delta &lt; theta:</div>
+<div>&nbsp; &nbsp; &nbsp; &nbsp; print(f"Converged in {iteration} iterations")</div>
+<div>&nbsp; &nbsp; &nbsp; &nbsp; break</div>
+<br><br>
+<div># -----------------------------</div>
+<div># DISPLAY OPTIMAL POLICY</div>
+<div># -----------------------------</div>
+<div>print("\nOptimal policy over belief space:")</div>
+<div>for i in range(0, len(belief_points), 20):</div>
+<div>&nbsp; &nbsp; print(f"Belief tiger-left={belief_points[i]:.2f} -&gt; {policy[i]}")</div>
+<br><br>
+<div># -----------------------------</div>
+<div># PLOT POLICY</div>
+<div># -----------------------------</div>
+<div>policy_numeric = [actions.index(a) for a in policy]</div>
+<br>
+<div>plt.figure(figsize=(10,5))</div>
+<div>plt.plot(belief_points, policy_numeric)</div>
+<div>plt.yticks([0,1,2], actions)</div>
+<div>plt.xlabel("Belief P(Tiger Left)")</div>
+<div>plt.ylabel("Optimal Action")</div>
+<div>plt.title("Optimal Policy for Tiger POMDP")</div>
+<div>plt.grid()</div>
+<div>plt.show()</div>
+</div></body></html>
