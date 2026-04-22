@@ -347,6 +347,48 @@ st.markdown(
             background: #F0FBF8 !important;
         }}
 
+        /* Inject live-data buttons */
+        .st-key-inject_main .stButton > button {{
+            background: {ALERT} !important;
+            color: #FFFFFF !important;
+            border: none !important;
+            border-radius: 8px !important;
+            font-size: 11px !important;
+            letter-spacing: 0.16em !important;
+            text-transform: uppercase !important;
+            font-weight: 700 !important;
+            padding: 10px 14px !important;
+            box-shadow: none !important;
+        }}
+        .st-key-inject_main .stButton > button:hover {{ background: #B91C1C !important; }}
+        .st-key-inject_main .stButton > button p {{ color: #FFFFFF !important; }}
+        [class*="st-key-inject_scen_"] .stButton > button {{
+            background: {SURFACE} !important;
+            color: {TEXT} !important;
+            border: 1px solid {BORDER} !important;
+            border-left: 3px solid transparent !important;
+            border-radius: 8px !important;
+            font-size: 12px !important;
+            font-weight: 500 !important;
+            text-align: left !important;
+            justify-content: flex-start !important;
+            padding: 10px 12px !important;
+            box-shadow: none !important;
+            transition: all 0.15s ease !important;
+        }}
+        [class*="st-key-inject_scen_"] .stButton > button:hover {{
+            border-left: 3px solid {PRIMARY} !important;
+            background: #F0FBF8 !important;
+        }}
+        [class*="st-key-inject_scen_"] .stButton > button p {{
+            color: {TEXT} !important; text-align: left !important;
+        }}
+        .inject-caption {{
+            font-size: 10px; color: {MUTED_SOFT};
+            letter-spacing: 0.14em; text-transform: uppercase;
+            margin-top: 6px;
+        }}
+
         /* Refresh buttons (briefing + vitals) */
         .st-key-refresh_briefing .stButton > button,
         .st-key-refresh_vitals .stButton > button {{
@@ -758,6 +800,38 @@ def _escape(s: str) -> str:
     return _html.escape(str(s), quote=False)
 
 
+def inject_today_reading(hr: int, steps: int, sleep: float, cals: int) -> None:
+    """Write (or overwrite) today's row in health_logs with the given values.
+
+    anomaly_flag is auto-set: 1 if HR > 100 OR sleep < 6.0 OR steps < 3000.
+    Also clears chat / briefing / proactive state so the agent re-triggers
+    on the next render.
+    """
+    hr = int(hr); steps = int(steps); cals = int(cals)
+    sleep = round(float(sleep), 1)
+    anomaly = 1 if (hr > 100 or sleep < 6.0 or steps < 3000) else 0
+    db.insert_health_log(
+        {
+            "date": date.today().isoformat(),
+            "heart_rate_avg": hr,
+            "steps": steps,
+            "sleep_hours": sleep,
+            "calories_burned": cals,
+            "anomaly_flag": anomaly,
+        }
+    )
+    # Reset agent-facing state so the proactive re-fires with the new values.
+    st.session_state.messages = []
+    st.session_state.proactive_done = False
+    st.session_state.feedback_given = {}
+    st.session_state.daily_briefing = None
+    st.session_state.daily_briefing_ts = None
+    try:
+        _get_agent().reset_history()
+    except Exception:
+        pass
+
+
 # =========================================================================
 # HTML component builders
 # =========================================================================
@@ -1039,6 +1113,80 @@ with st.sidebar:
             _get_agent.clear()
             st.toast("Demo reset", icon="↻")
             st.rerun()
+
+    # ---------------- Live Data Input ----------------
+    with st.expander("📡 Live Data Input", expanded=False):
+        live_today = db.get_log_by_date(date.today().isoformat()) or {
+            "heart_rate_avg": 72, "steps": 8000,
+            "sleep_hours": 7.5, "calories_burned": 2000,
+        }
+
+        in_hr = st.number_input(
+            "Heart Rate (bpm)",
+            min_value=40, max_value=220,
+            value=int(live_today["heart_rate_avg"]), step=1,
+        )
+        in_steps = st.number_input(
+            "Steps",
+            min_value=0, max_value=30000,
+            value=int(live_today["steps"]), step=100,
+        )
+        in_sleep = st.number_input(
+            "Sleep Hours",
+            min_value=0.0, max_value=12.0,
+            value=float(live_today["sleep_hours"]), step=0.1, format="%.1f",
+        )
+        in_cals = st.number_input(
+            "Calories",
+            min_value=0, max_value=5000,
+            value=int(live_today["calories_burned"]), step=50,
+        )
+
+        with st.container(key="inject_main"):
+            if st.button("🚨 Inject Live Reading", use_container_width=True):
+                inject_today_reading(in_hr, in_steps, in_sleep, in_cals)
+                st.toast("Live reading injected", icon="📡")
+                st.rerun()
+
+        st.markdown(
+            "<div class='inject-caption'>Quick scenarios</div>",
+            unsafe_allow_html=True,
+        )
+
+        with st.container(key="inject_scen_hr"):
+            if st.button("⚡  Simulate High HR Alert", use_container_width=True):
+                inject_today_reading(
+                    hr=118,
+                    steps=int(live_today["steps"]),
+                    sleep=float(live_today["sleep_hours"]),
+                    cals=int(live_today["calories_burned"]),
+                )
+                st.toast("High HR scenario injected", icon="⚡")
+                st.rerun()
+
+        with st.container(key="inject_scen_workout"):
+            if st.button("🏃  Simulate Post-Workout", use_container_width=True):
+                inject_today_reading(
+                    hr=142,
+                    steps=int(live_today["steps"]) + 4500,
+                    sleep=float(live_today["sleep_hours"]),
+                    cals=int(live_today["calories_burned"]) + 380,
+                )
+                st.toast("Post-workout scenario injected", icon="🏃")
+                st.rerun()
+
+        with st.container(key="inject_scen_sleep"):
+            if st.button("😴  Simulate Poor Sleep", use_container_width=True):
+                inject_today_reading(
+                    hr=int(live_today["heart_rate_avg"]) + 12,
+                    steps=int(live_today["steps"]),
+                    sleep=3.8,
+                    cals=int(live_today["calories_burned"]),
+                )
+                st.toast("Poor-sleep scenario injected", icon="😴")
+                st.rerun()
+
+    st.caption("Changes trigger live agent analysis")
 
 
 # =========================================================================
