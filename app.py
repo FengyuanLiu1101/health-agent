@@ -838,18 +838,16 @@ def inject_today_reading(hr: int, steps: int, sleep: float, cals: int) -> None:
 def metric_card_html(label: str, value: str, unit: str, tier: str,
                      arrow: str, pct_str: str, trend_cls: str) -> str:
     color = _tier_color(tier)
-    return f"""
-    <div class="metric-card">
-        <div class="metric-label">{label}</div>
-        <div>
-            <span class="metric-value">{value}</span><span class="metric-unit">{unit}</span>
-        </div>
-        <div class="metric-trend {trend_cls}">
-            <span>{arrow}</span><span>{pct_str}</span>
-        </div>
-        <div class="metric-statusbar" style="background:{color}"></div>
-    </div>
-    """
+    return (
+        f'<div class="metric-card">'
+        f'<div class="metric-label">{label}</div>'
+        f'<div><span class="metric-value">{value}</span>'
+        f'<span class="metric-unit">{unit}</span></div>'
+        f'<div class="metric-trend {trend_cls}">'
+        f'<span>{arrow}</span><span>{pct_str}</span></div>'
+        f'<div class="metric-statusbar" style="background:{color}"></div>'
+        f'</div>'
+    )
 
 
 def score_ring_html(value: int, size: int = 54, stroke: int = 6) -> str:
@@ -874,36 +872,40 @@ def score_ring_html(value: int, size: int = 54, stroke: int = 6) -> str:
 
 def vitals_strip_html(vitals: dict) -> str:
     hr_color_cls = "" if vitals["hr"] <= 85 else "alert"
-    return f"""
-    <div class="vitals-strip">
-        <div class="vital-item">
-            <div class="vital-label">
-                <span class="pulse-dot {hr_color_cls}"></span>Live HR
-            </div>
-            <div><span class="vital-value">{vitals['hr']}</span><span class="vital-unit">bpm</span></div>
-            <div class="vital-sub">Resting pulse (today)</div>
-        </div>
-        <div class="vital-item">
-            <div class="vital-label">HRV</div>
-            <div><span class="vital-value">{vitals['hrv']}</span><span class="vital-unit">ms</span></div>
-            <div class="vital-sub">Heart rate variability</div>
-        </div>
-        <div class="vital-item">
-            <div class="vital-label">Recovery</div>
-            <div style="display:flex;align-items:center;gap:10px;">
-                {score_ring_html(vitals['recovery'])}
-                <div class="vital-sub">Sleep + HR composite</div>
-            </div>
-        </div>
-        <div class="vital-item">
-            <div class="vital-label">Readiness</div>
-            <div style="display:flex;align-items:center;gap:10px;">
-                {score_ring_html(vitals['readiness'])}
-                <div class="vital-sub">Whole-body composite</div>
-            </div>
-        </div>
-    </div>
-    """
+    ring_recovery = score_ring_html(vitals['recovery'])
+    ring_readiness = score_ring_html(vitals['readiness'])
+    return (
+        '<div class="vitals-strip">'
+            '<div class="vital-item">'
+                '<div class="vital-label">'
+                    f'<span class="pulse-dot {hr_color_cls}"></span>Live HR'
+                '</div>'
+                f'<div><span class="vital-value">{vitals["hr"]}</span>'
+                '<span class="vital-unit">bpm</span></div>'
+                '<div class="vital-sub">Resting pulse (today)</div>'
+            '</div>'
+            '<div class="vital-item">'
+                '<div class="vital-label">HRV</div>'
+                f'<div><span class="vital-value">{vitals["hrv"]}</span>'
+                '<span class="vital-unit">ms</span></div>'
+                '<div class="vital-sub">Heart rate variability</div>'
+            '</div>'
+            '<div class="vital-item">'
+                '<div class="vital-label">Recovery</div>'
+                '<div style="display:flex;align-items:center;gap:10px;">'
+                    f'{ring_recovery}'
+                    '<div class="vital-sub">Sleep + HR composite</div>'
+                '</div>'
+            '</div>'
+            '<div class="vital-item">'
+                '<div class="vital-label">Readiness</div>'
+                '<div style="display:flex;align-items:center;gap:10px;">'
+                    f'{ring_readiness}'
+                    '<div class="vital-sub">Whole-body composite</div>'
+                '</div>'
+            '</div>'
+        '</div>'
+    )
 
 
 def bar_chart_html(rows: list[dict]) -> str:
@@ -1288,21 +1290,17 @@ if today_log:
     sum_l, sum_r = st.columns([1, 1.3], gap="medium")
 
     with sum_l:
-        st.markdown(
-            f"""
-            <div class="summary-card">
-                <div style="font-size:10px;letter-spacing:0.18em;
-                            text-transform:uppercase;color:{MUTED};
-                            font-weight:600;margin-bottom:10px">
-                    Health Snapshot
-                </div>
-                <div class="summary-score" style="color:{score_color}">{score}</div>
-                <div class="summary-score-sub" style="color:{score_color}">{score_label}</div>
-                {highlights_html(highlights)}
-            </div>
-            """,
-            unsafe_allow_html=True,
+        snapshot_html = (
+            '<div class="summary-card">'
+            f'<div style="font-size:10px;letter-spacing:0.18em;'
+            f'text-transform:uppercase;color:{MUTED};font-weight:600;'
+            f'margin-bottom:10px">Health Snapshot</div>'
+            f'<div class="summary-score" style="color:{score_color}">{score}</div>'
+            f'<div class="summary-score-sub" style="color:{score_color}">{score_label}</div>'
+            f'{highlights_html(highlights)}'
+            '</div>'
         )
+        st.markdown(snapshot_html, unsafe_allow_html=True)
 
     with sum_r:
         # Generate briefing on demand / once per session
@@ -1319,18 +1317,16 @@ if today_log:
         )
         briefing_ts = st.session_state.daily_briefing_ts or "—"
 
-        st.markdown(
-            f"""
-            <div class="briefing-card">
-                <div class="briefing-head">
-                    <span class="briefing-title">AI Daily Briefing</span>
-                    <span class="briefing-time">Updated {briefing_ts}</span>
-                </div>
-                <div class="briefing-body">{_escape(briefing_text)}</div>
-            </div>
-            """,
-            unsafe_allow_html=True,
+        briefing_html = (
+            '<div class="briefing-card">'
+            '<div class="briefing-head">'
+            '<span class="briefing-title">AI Daily Briefing</span>'
+            f'<span class="briefing-time">Updated {briefing_ts}</span>'
+            '</div>'
+            f'<div class="briefing-body">{_escape(briefing_text)}</div>'
+            '</div>'
         )
+        st.markdown(briefing_html, unsafe_allow_html=True)
 
         refresh_cols = st.columns([1, 3])
         with refresh_cols[0]:
