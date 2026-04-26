@@ -1,13 +1,10 @@
-"""HealthAgent: LangChain agent wiring over GPT-4o."""
+"""HealthAgent: LangChain agent wiring over a configurable OpenAI model."""
 from __future__ import annotations
 
 import os
 from typing import Any, Callable
 
-try:
-    from langchain.agents import AgentExecutor, create_tool_calling_agent
-except ImportError:
-    from langchain_classic.agents import AgentExecutor, create_tool_calling_agent
+from langchain.agents import AgentExecutor, create_tool_calling_agent
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_openai import ChatOpenAI
 
@@ -29,7 +26,7 @@ def _build_prompt() -> ChatPromptTemplate:
 class HealthAgent:
     """Thin wrapper around a LangChain OpenAI-tools agent."""
 
-    def __init__(self, model: str = "gpt-4o", temperature: float = 0.3, verbose: bool = True):
+    def __init__(self, model: str = "gpt-4o-mini", temperature: float = 0.3, verbose: bool = True):
         if not os.getenv("OPENAI_API_KEY"):
             raise RuntimeError(
                 "OPENAI_API_KEY is not set. Copy .env.example to .env and add your key."
@@ -43,7 +40,7 @@ class HealthAgent:
             tools=self.tools,
             verbose=verbose,
             return_intermediate_steps=True,
-            max_iterations=8,
+            max_iterations=5,
             handle_parsing_errors=True,
         )
         self._chat_history: list = []

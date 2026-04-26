@@ -15,53 +15,7 @@ from data.simulator import (
     NORMAL_STEPS,
 )
 from . import memory
-
-
-# ---------- Scoring helpers ----------
-def _metric_deductions(hr: int, steps: int, sleep: float, cals: int) -> tuple[int, list[str]]:
-    """Return (deduction, flags) where deduction is subtracted from a score of 100."""
-    deduction = 0
-    flags: list[str] = []
-
-    # Sleep (most impactful)
-    if sleep < 5.5:
-        deduction += 30
-        flags.append(f"Low sleep: {sleep}h (target 7-9h)")
-    elif sleep < 7.0:
-        deduction += 15
-        flags.append(f"Slightly low sleep: {sleep}h (target 7-9h)")
-    elif sleep > 10.0:
-        deduction += 10
-        flags.append(f"Unusually long sleep: {sleep}h")
-
-    # Heart rate
-    if hr > 95:
-        deduction += 20
-        flags.append(f"Elevated resting HR: {hr} bpm (target 60-100, well-rested <80)")
-    elif hr > 85:
-        deduction += 10
-        flags.append(f"Slightly elevated HR: {hr} bpm")
-    elif hr < 50:
-        deduction += 5
-        flags.append(f"Unusually low HR: {hr} bpm")
-
-    # Steps
-    if steps < 4000:
-        deduction += 20
-        flags.append(f"Low activity: {steps} steps (target 7,000-10,000)")
-    elif steps < 6000:
-        deduction += 10
-        flags.append(f"Below-target activity: {steps} steps")
-
-    # Calories
-    if cals < 1500:
-        deduction += 10
-        flags.append(f"Low caloric burn: {cals} kcal")
-    elif cals > 3000:
-        deduction += 5
-        flags.append(f"Very high caloric burn: {cals} kcal")
-
-    return deduction, flags
+from .scoring import score_log
 
 
 # ---------- Tool 1 ----------
@@ -85,25 +39,14 @@ def assess_health_status(target_date: str = "") -> str:
             {"error": f"No health log found for {target_date}.", "date": target_date}
         )
 
-    deduction, flags = _metric_deductions(
-        row["heart_rate_avg"], row["steps"], row["sleep_hours"], row["calories_burned"]
-    )
-    score = max(0, 100 - deduction)
-    if score >= 85:
-        status = "excellent"
-    elif score >= 70:
-        status = "good"
-    elif score >= 50:
-        status = "caution"
-    else:
-        status = "poor"
+    result = score_log(row)
 
     return json.dumps(
         {
             "date": target_date,
-            "score": score,
-            "status": status,
-            "flags": flags,
+            "score": result.score,
+            "status": result.status,
+            "flags": result.flags,
             "metrics": {
                 "heart_rate_avg_bpm": row["heart_rate_avg"],
                 "steps": row["steps"],

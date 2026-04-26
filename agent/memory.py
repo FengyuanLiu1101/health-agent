@@ -11,18 +11,32 @@ from typing import List
 from data import db
 
 
-def save_feedback(advice_summary: str, rating: int, tag: str) -> None:
-    """Persist a thumbs up (1) or thumbs down (-1) for a piece of advice."""
-    db.insert_feedback(
-        date=date.today().isoformat(),
-        advice_summary=advice_summary,
-        rating=int(rating),
-        tag=tag or "general",
-    )
+def save_feedback(advice_summary: str, rating: int, tag: str | List[str]) -> None:
+    """Persist a thumbs up (1) or thumbs down (-1) for a piece of advice.
+
+    `tag` may be a single string or a list of tags (the agent's response
+    typically covers multiple topics; storing one row per tag avoids biasing
+    a multi-topic answer toward whichever tag matched first).
+    """
+    tags = tag if isinstance(tag, list) else [tag or "general"]
+    if not tags:
+        tags = ["general"]
+    today = date.today().isoformat()
+    for t in tags:
+        db.insert_feedback(
+            date=today,
+            advice_summary=advice_summary,
+            rating=int(rating),
+            tag=t or "general",
+        )
 
 
-def get_negative_feedback_tags(min_count: int = 1) -> List[str]:
-    """Return a deduplicated list of tags the user has rated down."""
+def get_negative_feedback_tags(min_count: int = 2) -> List[str]:
+    """Return tags the user has rated down at least `min_count` times.
+
+    Default of 2 prevents a single accidental thumbs-down from disabling a
+    whole topic for the agent (which the system prompt instructs it to avoid).
+    """
     rows = db.fetch_feedback_tags(rating_filter=-1)
     counter = Counter(r["tag"] for r in rows if r.get("tag"))
     return [tag for tag, c in counter.items() if c >= min_count]

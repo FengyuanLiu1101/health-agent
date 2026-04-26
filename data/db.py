@@ -1,4 +1,8 @@
-"""SQLite initialization and CRUD helpers for HealthAgent."""
+"""SQLite initialization and CRUD helpers for HealthAgent.
+
+The DB path is configurable via `set_db_path()` so a multi-user host (e.g.,
+Streamlit Community Cloud) can give each session its own SQLite file.
+"""
 from __future__ import annotations
 
 import os
@@ -6,17 +10,31 @@ import sqlite3
 from contextlib import contextmanager
 from typing import Any, Iterable
 
-# Store the DB file at the project root so running `streamlit run app.py`
-# from the project root always targets the same file.
-DB_PATH = os.path.join(
+# Default to the project-root file so local single-user runs are unchanged.
+_DEFAULT_DB_PATH = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "health_agent.db"
 )
+_db_path: str = os.environ.get("HEALTH_AGENT_DB_PATH", _DEFAULT_DB_PATH)
+
+
+def set_db_path(path: str) -> None:
+    """Override the DB path for this process. Call before any get_conn()."""
+    global _db_path
+    _db_path = path
+
+
+def get_db_path() -> str:
+    return _db_path
+
+
+# Backwards-compat: a few callers may still import DB_PATH directly.
+DB_PATH = _db_path
 
 
 @contextmanager
 def get_conn():
     """Context manager yielding a sqlite3 connection with row_factory set."""
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(_db_path)
     conn.row_factory = sqlite3.Row
     try:
         yield conn

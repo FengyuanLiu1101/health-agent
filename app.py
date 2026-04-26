@@ -7,15 +7,30 @@ Visual layer only; all agent, tool, memory, and simulator logic are unchanged.
 """
 from __future__ import annotations
 
+import hashlib
 import html as _html
 import os
+import tempfile
+import uuid
 from datetime import date, datetime, timedelta
 
-import pandas as pd
 import streamlit as st
 from dotenv import load_dotenv
 
 load_dotenv()
+
+# --- Per-session DB isolation ----------------------------------------------
+# Streamlit Community Cloud runs one process for many visitors; without this
+# every visitor would share the same SQLite file (and stomp on each other's
+# health logs / feedback). Set the DB path BEFORE importing modules that
+# touch the DB.
+from data import db as _db  # noqa: E402
+
+if "session_id" not in st.session_state:
+    st.session_state.session_id = uuid.uuid4().hex[:16]
+_db.set_db_path(
+    os.path.join(tempfile.gettempdir(), f"health_agent_{st.session_state.session_id}.db")
+)
 
 from agent.core import HealthAgent  # noqa: E402
 from agent import memory  # noqa: E402
@@ -613,15 +628,20 @@ st.markdown(
 )
 
 
+_AGENT_MODEL = os.getenv("HEALTH_AGENT_MODEL", "gpt-4o-mini")
+
+
 # =========================================================================
-# Bootstrap (unchanged)
+# Bootstrap
 # =========================================================================
-@st.cache_resource(show_spinner=False)
 def _bootstrap_data():
-    simulator.ensure_data_present()
-    return True
+    """Per-session DB bootstrap. Cheap (creates tables + seeds if empty)."""
+    if not st.session_state.get("data_bootstrapped"):
+        simulator.ensure_data_present()
+        st.session_state.data_bootstrapped = True
 
 
+# Knowledge base is a process-wide read-only artifact and safe to share.
 @st.cache_resource(show_spinner="Indexing knowledge base…")
 def _bootstrap_kb():
     try:
@@ -632,9 +652,18 @@ def _bootstrap_kb():
         return False
 
 
-@st.cache_resource(show_spinner="Warming up the AI coach…")
 def _get_agent() -> HealthAgent:
-    return HealthAgent(model="gpt-4o", temperature=0.3, verbose=True)
+    """Per-session agent. Holds chat history; must NOT be shared across users."""
+    if "agent" not in st.session_state:
+        with st.spinner("Warming up the AI coach…"):
+            st.session_state.agent = HealthAgent(
+                model=_AGENT_MODEL, temperature=0.3, verbose=True
+            )
+    return st.session_state.agent
+
+
+def _reset_agent() -> None:
+    st.session_state.pop("agent", None)
 
 
 _bootstrap_data()
@@ -673,34 +702,20 @@ def today_tiers(log: dict) -> dict:
     }
 
 
+_STATUS_COLORS = {
+    "excellent": GOOD,
+    "good": GOOD,
+    "caution": WARN,
+    "poor": ALERT,
+}
+
+
 def overall_score(log: dict) -> tuple[int, str, str]:
-    """Reuses the same deduction logic as agent/tools.py for consistency."""
-    hr = log["heart_rate_avg"]
-    steps = log["steps"]
-    sleep = log["sleep_hours"]
-    cals = log["calories_burned"]
-    deduction = 0
-
-    if sleep < 5.5: deduction += 30
-    elif sleep < 7.0: deduction += 15
-    elif sleep > 10.0: deduction += 10
-
-    if hr > 95: deduction += 20
-    elif hr > 85: deduction += 10
-    elif hr < 50: deduction += 5
-
-    if steps < 4000: deduction += 20
-    elif steps < 6000: deduction += 10
-
-    if cals < 1500: deduction += 10
-    elif cals > 3000: deduction += 5
-
-    score = max(0, 100 - deduction)
-    if score >= 90:   label, color = "Excellent", GOOD
-    elif score >= 70: label, color = "Good",       GOOD
-    elif score >= 50: label, color = "Fair",       WARN
-    else:             label, color = "Poor",       ALERT
-    return score, label, color
+    """Single source of truth: delegates to agent.scoring so the dashboard
+    label cannot drift from the agent's status."""
+    from agent.scoring import score_log
+    result = score_log(log)
+    return result.score, result.label, _STATUS_COLORS[result.status]
 
 
 def derive_vitals(log: dict) -> dict:
@@ -787,13 +802,22 @@ def _compute_trends(rows: list[dict]) -> dict:
     }
 
 
-def _tag_from_text(text: str) -> str:
+_TAG_KEYWORDS = {
+    "sleep": ("sleep", "bedtime", "nap"),
+    "exercise": ("walk", "exercise", "workout", "steps", "cardio"),
+    "diet": ("eat", "meal", "protein", "diet", "hydrat", "water"),
+    "stress": ("stress", "breath", "meditat"),
+}
+
+
+def _tags_from_text(text: str) -> list[str]:
+    """Return ALL matching topic tags. A multi-topic answer that gets a
+    thumbs-down should not be falsely attributed to whichever tag happened
+    to be checked first.
+    """
     t = text.lower()
-    if "sleep" in t or "bedtime" in t or "nap" in t:   return "sleep"
-    if "walk" in t or "exercise" in t or "workout" in t or "steps" in t or "cardio" in t: return "exercise"
-    if "eat" in t or "meal" in t or "protein" in t or "diet" in t or "hydrat" in t or "water" in t: return "diet"
-    if "stress" in t or "breath" in t or "meditat" in t: return "stress"
-    return "general"
+    matched = [tag for tag, kws in _TAG_KEYWORDS.items() if any(k in t for k in kws)]
+    return matched or ["general"]
 
 
 def _escape(s: str) -> str:
@@ -888,20 +912,20 @@ def vitals_strip_html(vitals: dict) -> str:
                 '<div class="vital-label">HRV</div>'
                 f'<div><span class="vital-value">{vitals["hrv"]}</span>'
                 '<span class="vital-unit">ms</span></div>'
-                '<div class="vital-sub">Heart rate variability</div>'
+                '<div class="vital-sub">HRV (estimated from HR)</div>'
             '</div>'
             '<div class="vital-item">'
                 '<div class="vital-label">Recovery</div>'
                 '<div style="display:flex;align-items:center;gap:10px;">'
                     f'{ring_recovery}'
-                    '<div class="vital-sub">Sleep + HR composite</div>'
+                    '<div class="vital-sub">Estimated · sleep + HR</div>'
                 '</div>'
             '</div>'
             '<div class="vital-item">'
                 '<div class="vital-label">Readiness</div>'
                 '<div style="display:flex;align-items:center;gap:10px;">'
                     f'{ring_readiness}'
-                    '<div class="vital-sub">Whole-body composite</div>'
+                    '<div class="vital-sub">Estimated · demo composite</div>'
                 '</div>'
             '</div>'
         '</div>'
@@ -918,7 +942,7 @@ def bar_chart_html(rows: list[dict]) -> str:
         pct = max(4.0, (r["steps"] / max_steps) * 100)
         is_today = r["date"] == today_iso
         color = PRIMARY if is_today else "#CBD5E1"
-        day_letter = pd.to_datetime(r["date"]).strftime("%a")[:3].upper()
+        day_letter = datetime.fromisoformat(r["date"]).strftime("%a")[:3].upper()
         lbl_cls = "bar-label active" if is_today else "bar-label"
         cols.append(
             f'<div class="bar-col">'
@@ -1009,17 +1033,43 @@ BRIEFING_PROMPT = (
 )
 
 
+def _today_log_fingerprint() -> str:
+    """Stable hash of today's metrics. Used to invalidate the briefing cache
+    only when the underlying data actually changes."""
+    log = db.get_log_by_date(date.today().isoformat())
+    if not log:
+        return "no-data"
+    payload = (
+        f"{log['heart_rate_avg']}|{log['steps']}|"
+        f"{log['sleep_hours']}|{log['calories_burned']}"
+    )
+    return hashlib.sha1(payload.encode()).hexdigest()[:12]
+
+
 def generate_daily_briefing() -> str:
     """Run a standalone agent invocation for the briefing.
 
+    Cached by (date, today's-log-hash) so a page refresh with no underlying
+    data change does NOT re-trigger another full ReAct loop (each invocation
+    is ~3-5 OpenAI calls).
+
     Does NOT mutate the main chat history (bypasses HealthAgent.chat's append).
     """
+    cache_key = f"{date.today().isoformat()}:{_today_log_fingerprint()}"
+    cached_key = st.session_state.get("daily_briefing_key")
+    cached_text = st.session_state.get("daily_briefing")
+    if cached_key == cache_key and cached_text:
+        return cached_text
+
     agent = _get_agent()
     try:
         result = agent.executor.invoke({"input": BRIEFING_PROMPT, "chat_history": []})
-        return (result.get("output") or "").strip()
+        text = (result.get("output") or "").strip()
     except Exception as e:
-        return f"Briefing unavailable: {e}"
+        text = f"Briefing unavailable: {e}"
+
+    st.session_state.daily_briefing_key = cache_key
+    return text
 
 
 # =========================================================================
@@ -1112,7 +1162,7 @@ with st.sidebar:
             st.session_state.feedback_given = {}
             st.session_state.daily_briefing = None
             st.session_state.daily_briefing_ts = None
-            _get_agent.clear()
+            _reset_agent()
             st.toast("Demo reset", icon="↻")
             st.rerun()
 
@@ -1420,14 +1470,14 @@ def render_agent_message(msg: dict, idx: int):
             fc1, fc2, _fc3 = st.columns([1, 1, 10])
             with fc1:
                 if st.button("▲", key=f"up_{msg_id}", help="Helpful"):
-                    tag = _tag_from_text(msg["content"])
-                    memory.save_feedback(msg["content"][:240], 1, tag)
+                    tags = _tags_from_text(msg["content"])
+                    memory.save_feedback(msg["content"][:240], 1, tags)
                     st.session_state.feedback_given[msg_id] = 1
                     st.rerun()
             with fc2:
                 if st.button("▽", key=f"down_{msg_id}", help="Not useful"):
-                    tag = _tag_from_text(msg["content"])
-                    memory.save_feedback(msg["content"][:240], -1, tag)
+                    tags = _tags_from_text(msg["content"])
+                    memory.save_feedback(msg["content"][:240], -1, tags)
                     st.session_state.feedback_given[msg_id] = -1
                     st.rerun()
 
