@@ -1,4 +1,10 @@
-"""Build and load a FAISS vector store from health_facts.txt."""
+"""Build a FAISS vector store from health_facts.txt.
+
+We deliberately do NOT load a pre-built index from disk: FAISS.load_local
+unpickles arbitrary Python objects (`allow_dangerous_deserialization=True`),
+which is RCE if anything else can write to the index directory. The corpus
+is tiny (~30 facts) so re-embedding once per process at startup is fine.
+"""
 from __future__ import annotations
 
 import os
@@ -11,7 +17,8 @@ from langchain_openai import OpenAIEmbeddings
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 FACTS_PATH = os.path.join(PROJECT_ROOT, "health_facts.txt")
-INDEX_DIR = os.path.join(PROJECT_ROOT, "faiss_index")
+
+_INDEX: FAISS | None = None
 
 
 def _load_facts() -> List[Document]:
@@ -29,28 +36,18 @@ def _embeddings() -> OpenAIEmbeddings:
     return OpenAIEmbeddings(model="text-embedding-3-small")
 
 
-def build_index(force_rebuild: bool = False) -> FAISS:
-    """Build the FAISS index from health_facts.txt and save to disk."""
-    embeddings = _embeddings()
-
-    if os.path.isdir(INDEX_DIR) and not force_rebuild:
-        try:
-            return FAISS.load_local(
-                INDEX_DIR, embeddings, allow_dangerous_deserialization=True
-            )
-        except Exception:
-            pass
-
+def build_index() -> FAISS:
+    """Build the FAISS index in memory from health_facts.txt."""
     docs = _load_facts()
-    store = FAISS.from_documents(docs, embeddings)
-    os.makedirs(INDEX_DIR, exist_ok=True)
-    store.save_local(INDEX_DIR)
-    return store
+    return FAISS.from_documents(docs, _embeddings())
 
 
 def load_or_build_index() -> FAISS:
-    """Load existing FAISS index; build it if it does not yet exist."""
-    return build_index(force_rebuild=False)
+    """Return a process-cached in-memory FAISS index. No disk persistence."""
+    global _INDEX
+    if _INDEX is None:
+        _INDEX = build_index()
+    return _INDEX
 
 
 def search(query: str, k: int = 3) -> List[str]:
@@ -60,7 +57,7 @@ def search(query: str, k: int = 3) -> List[str]:
 
 
 if __name__ == "__main__":
-    store = build_index(force_rebuild=True)
+    store = build_index()
     print("Built FAISS index. Sample query: 'how much should I sleep?'")
     for hit in store.similarity_search("how much should I sleep?", k=3):
         print("-", hit.page_content)
