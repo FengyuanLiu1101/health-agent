@@ -75,6 +75,26 @@ pip install pytest
 pytest -q
 ```
 
+The same tests run in **GitHub Actions** (`.github/workflows/ci.yml`) on push and pull request to `main` or `master`.
+
+### Dependencies
+
+`requirements.txt` pins first-party app dependencies (including **`openai==1.58.1`**, which matches `langchain-openai==0.2.14`’s lower bound). Use a **clean virtual environment** when installing so other global LangChain installs do not confuse the resolver.
+
+## GitHub
+
+This project was initialized with `git` in-repo. To push to your GitHub account:
+
+1. Create an **empty** repository on GitHub (no auto-generated README if you want this history to remain the single root commit).
+2. In the project directory:
+
+```bash
+git remote add origin https://github.com/<YOUR_USER>/<YOUR_REPO>.git
+git push -u origin main
+```
+
+Replace the URL with your SSH remote if you use SSH keys.
+
 ## Course
 
 AI Agent Course — Final Project
