@@ -5,6 +5,10 @@ AI-powered personal health monitoring demo: it reads daily wearable-style metric
 ## Live Demo
 👉 [health-agent-fengyuan.streamlit.app](https://health-agent-fengyuan.streamlit.app)
 
+## Source code
+
+👉 **[github.com/FengyuanLiu1101/health-agent](https://github.com/FengyuanLiu1101/health-agent)** — default branch for the latest work is **`main`** (older coursework may still exist on **`master`**).
+
 ## What It Does
 
 | Area | Behavior |
@@ -83,17 +87,15 @@ The same tests run in **GitHub Actions** (`.github/workflows/ci.yml`) on push an
 
 ## GitHub
 
-This project was initialized with `git` in-repo. To push to your GitHub account:
-
-1. Create an **empty** repository on GitHub (no auto-generated README if you want this history to remain the single root commit).
-2. In the project directory:
+Remote: `https://github.com/FengyuanLiu1101/health-agent.git`. Clone and run:
 
 ```bash
-git remote add origin https://github.com/<YOUR_USER>/<YOUR_REPO>.git
-git push -u origin main
+git clone https://github.com/FengyuanLiu1101/health-agent.git
+cd health-agent
+git checkout main
 ```
 
-Replace the URL with your SSH remote if you use SSH keys.
+Contributors: after `git remote add origin …` (if you forked), use `git push -u origin main`.
 
 ## Course
 
