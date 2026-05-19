@@ -60,3 +60,39 @@ def test_get_anomaly_report_lists_flagged_days(isolated_db):
 
 def test_health_source_delegates_to_sqlite(isolated_db):
     assert source.get_log_by_date("2026-01-01")["steps"] == 9000
+
+
+# ---------------------------------------------------------------------------
+# compute_trend / compute_trend_hr  (pure functions — no DB needed)
+# ---------------------------------------------------------------------------
+from agent.tools import compute_trend, compute_trend_hr  # noqa: E402
+
+
+class TestComputeTrend:
+    def test_improving(self):
+        assert compute_trend([100, 100, 100, 110, 120, 130, 140]) == "improving"
+
+    def test_declining(self):
+        assert compute_trend([140, 130, 120, 110, 100, 100, 100]) == "declining"
+
+    def test_stable(self):
+        assert compute_trend([100, 101, 99, 100, 101, 100, 100]) == "stable"
+
+    def test_too_few_values(self):
+        assert compute_trend([]) == "stable"
+        assert compute_trend([100]) == "stable"
+        assert compute_trend([100, 110]) == "stable"
+
+    def test_all_zeros(self):
+        assert compute_trend([0, 0, 0, 0, 0]) == "stable"
+
+
+class TestComputeTrendHr:
+    def test_decreasing_hr_is_improving(self):
+        assert compute_trend_hr([90, 88, 85, 82, 80, 78, 75]) == "improving"
+
+    def test_increasing_hr_is_declining(self):
+        assert compute_trend_hr([60, 65, 70, 75, 80, 85, 90]) == "declining"
+
+    def test_stable_hr(self):
+        assert compute_trend_hr([70, 71, 70, 70, 71, 70, 70]) == "stable"

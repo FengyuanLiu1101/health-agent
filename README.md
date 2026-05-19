@@ -33,6 +33,70 @@ AI-powered personal health monitoring demo: it reads daily wearable-style metric
 
 The system prompt instructs the model **not to invent citations** if the knowledge tool returns an error or empty facts.
 
+## Architecture
+
+```mermaid
+flowchart TD
+    subgraph UI["UI Layer — app.py (Streamlit)"]
+        DASH["Dashboard\n(metrics · score · trends)"]
+        CHAT["Chat Interface\n(messages · feedback 👍👎)"]
+        SIDEBAR["Sidebar\n(profile · live data inject · reset)"]
+    end
+
+    subgraph AGENT["Agent Layer — agent/"]
+        CORE["HealthAgent (core.py)\nLangChain AgentExecutor · GPT-4o-mini"]
+        TOOLS["Tools (tools.py)\n① assess_health_status\n② get_health_trend\n③ get_anomaly_report\n④ query_knowledge_base\n⑤ get_user_profile"]
+        SCORING["Scoring (scoring.py)\nscore_log · score_status\nmetric_deductions"]
+        MEM["Memory (memory.py)\nprofile · feedback tags"]
+    end
+
+    subgraph DATA["Data Layer — data/"]
+        SOURCE["Source (source.py)\nPluggable HealthDataSource protocol"]
+        DB["SQLite (db.py)\nhealth_logs · user_profile · advice_feedback\nper-session path for Streamlit Cloud"]
+        SIM["Simulator (simulator.py)\n30-day wearable generator"]
+        KB["Knowledge Base (knowledge_base.py)\nFAISS · OpenAI Embeddings"]
+    end
+
+    subgraph EXT["External / Config"]
+        GPT["OpenAI API\nGPT-4o-mini + text-embedding-3-small"]
+        FACTS["health_facts.txt\n30 evidence-based guidelines"]
+        I18N["ui/i18n.py\nEN / ZH bilingual strings"]
+        CFG["config.py\nCentralised thresholds"]
+    end
+
+    CHAT -->|user message| CORE
+    CORE -->|response + tool calls| CHAT
+    DASH --> SOURCE
+    SIDEBAR --> MEM
+
+    CORE --> TOOLS
+    TOOLS --> SCORING
+    TOOLS --> MEM
+    TOOLS --> SOURCE
+    TOOLS --> KB
+
+    SOURCE --> DB
+    SIM -->|seed 30 days| DB
+    FACTS -->|embed on startup| KB
+    KB --> GPT
+    CORE --> GPT
+
+    CFG -.->|thresholds| SCORING
+    CFG -.->|thresholds| SIM
+    CFG -.->|thresholds| TOOLS
+    UI -.->|strings| I18N
+```
+
+### Message data-flow (one user turn)
+
+1. User sends a message in the chat.
+2. `HealthAgent.chat()` passes it to the **LangChain AgentExecutor**.
+3. GPT-4o-mini decides which tools to call — always starts with `assess_health_status`.
+4. Tools query **SQLite** (via the pluggable `data/source.py`), **FAISS**, and **memory**.
+5. GPT-4o-mini synthesises a personalised reply (≤200 words) in the user's language, honouring `disliked_advice_tags`.
+6. The reply is streamed back to the Streamlit chat interface.
+7. User clicks 👍 or 👎 → tag written to `advice_feedback` → steers next response.
+
 ## Memory Model
 
 - **Short-term:** LangChain chat history on the main `HealthAgent` (not used by the briefing agent’s `run_ephemeral` path).  
@@ -96,6 +160,12 @@ git checkout main
 ```
 
 Contributors: after `git remote add origin …` (if you forked), use `git push -u origin main`.
+
+## Notes
+
+- All numeric health thresholds (HR ranges, sleep targets, score buckets, anomaly limits) live in `config.py` — edit once, propagates to scoring, simulation, anomaly detection, and the UI simultaneously.
+- The FAISS index is rebuilt automatically on first run if `faiss_index/` is missing. Delete the folder to force a rebuild.
+- Feedback tags are extracted from the agent's response text (sleep / exercise / diet / stress / general). Two thumbs-downs on a topic are required before it is added to `disliked_advice_tags` (prevents accidental suppression).
 
 ## Course
 

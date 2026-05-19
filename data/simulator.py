@@ -5,20 +5,24 @@ import random
 from datetime import date, timedelta
 
 from . import db
-
-
-# Healthy baselines used both for generation and later comparison.
-NORMAL_HR = (60, 100)
-NORMAL_STEPS = (7000, 12000)
-NORMAL_SLEEP = (7.0, 9.0)
-NORMAL_CALORIES = (1800, 2500)
+from config import (
+    NORMAL_HR,
+    NORMAL_STEPS,
+    NORMAL_SLEEP,
+    NORMAL_CALORIES,
+    ANOMALY_STEPS_LOW,
+    ANOMALY_SLEEP_LOW,
+    ANOMALY_SLEEP_HIGH,
+    ANOMALY_CALORIES_LOW,
+    ANOMALY_CALORIES_HIGH,
+)
 
 
 def _is_anomalous(hr: int, steps: int, sleep: float, cals: int) -> int:
     bad_hr = hr < NORMAL_HR[0] or hr > NORMAL_HR[1]
-    bad_steps = steps < 5000
-    bad_sleep = sleep < 6.0 or sleep > 10.0
-    bad_cals = cals < 1500 or cals > 3000
+    bad_steps = steps < ANOMALY_STEPS_LOW
+    bad_sleep = sleep < ANOMALY_SLEEP_LOW or sleep > ANOMALY_SLEEP_HIGH
+    bad_cals = cals < ANOMALY_CALORIES_LOW or cals > ANOMALY_CALORIES_HIGH
     return 1 if (bad_hr or bad_steps or bad_sleep or bad_cals) else 0
 
 

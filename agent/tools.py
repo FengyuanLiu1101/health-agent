@@ -9,11 +9,16 @@ from langchain_core.tools import tool
 
 from data import knowledge_base
 from data import source as health_data
-from data.simulator import (
-    NORMAL_CALORIES,
+from config import (
     NORMAL_HR,
-    NORMAL_SLEEP,
     NORMAL_STEPS,
+    NORMAL_SLEEP,
+    NORMAL_CALORIES,
+    ANOMALY_STEPS_LOW,
+    ANOMALY_SLEEP_LOW,
+    ANOMALY_SLEEP_HIGH,
+    ANOMALY_CALORIES_LOW,
+    ANOMALY_CALORIES_HIGH,
 )
 from . import memory
 from .scoring import score_log
@@ -65,8 +70,13 @@ def assess_health_status(target_date: str = "") -> str:
 
 
 # ---------- Tool 2 ----------
-def _trend(values: List[float]) -> str:
-    """Classify a trend from a list of values (oldest -> newest)."""
+def compute_trend(values: List[float]) -> str:
+    """Classify a trend from a list of values (oldest -> newest).
+
+    Returns 'improving', 'declining', or 'stable'.
+    Threshold: >5% change between the first and second half of the window.
+    Public so app.py can reuse it without duplicating the logic.
+    """
     if len(values) < 3:
         return "stable"
     first_half = sum(values[: len(values) // 2]) / max(1, len(values) // 2)
@@ -81,9 +91,12 @@ def _trend(values: List[float]) -> str:
     return "stable"
 
 
-def _trend_for_hr(values: List[float]) -> str:
-    """HR trends are inverted: lower is improving (within healthy range)."""
-    raw = _trend(values)
+def compute_trend_hr(values: List[float]) -> str:
+    """HR trend is inverted: lower HR is improving (within healthy range).
+
+    Public so app.py can reuse it without duplicating the logic.
+    """
+    raw = compute_trend(values)
     if raw == "improving":
         return "declining"
     if raw == "declining":
@@ -125,10 +138,10 @@ def get_health_trend(days: int = 7) -> str:
             "window_days": days,
             "start_date": rows[0]["date"],
             "end_date": rows[-1]["date"],
-            "heart_rate": {**stats(hr), "trend": _trend_for_hr(hr)},
-            "steps": {**stats(steps), "trend": _trend(steps)},
-            "sleep_hours": {**stats(sleep), "trend": _trend(sleep)},
-            "calories_burned": {**stats(cals), "trend": _trend(cals)},
+            "heart_rate": {**stats(hr), "trend": compute_trend_hr(hr)},
+            "steps": {**stats(steps), "trend": compute_trend(steps)},
+            "sleep_hours": {**stats(sleep), "trend": compute_trend(sleep)},
+            "calories_burned": {**stats(cals), "trend": compute_trend(cals)},
             "anomalous_days": sum(1 for r in rows if r.get("anomaly_flag")),
         }
     )
@@ -143,11 +156,11 @@ def _anomaly_reasons(row: dict) -> list[str]:
     reasons: list[str] = []
     if hr < NORMAL_HR[0] or hr > NORMAL_HR[1]:
         reasons.append("heart_rate_out_of_range")
-    if steps < 5000:
+    if steps < ANOMALY_STEPS_LOW:
         reasons.append("low_steps")
-    if sleep < 6.0 or sleep > 10.0:
+    if sleep < ANOMALY_SLEEP_LOW or sleep > ANOMALY_SLEEP_HIGH:
         reasons.append("sleep_out_of_range")
-    if cals < 1500 or cals > 3000:
+    if cals < ANOMALY_CALORIES_LOW or cals > ANOMALY_CALORIES_HIGH:
         reasons.append("calories_out_of_range")
     return reasons or ["anomaly_flagged"]
 
