@@ -38,9 +38,19 @@ _db.set_db_path(
 
 from agent.core import HealthAgent  # noqa: E402
 from agent import memory  # noqa: E402
+from agent.tools import compute_trend, compute_trend_hr  # noqa: E402
 from data import db, simulator  # noqa: E402
 from data import knowledge_base  # noqa: E402
 from ui.i18n import briefing_prompt, format_header_date, trend_direction_label, t  # noqa: E402
+from config import (  # noqa: E402
+    HR_GOOD, HR_WARN_BELOW, HR_WARN_ABOVE,
+    STEPS_GOOD, STEPS_WARN_BELOW,
+    SLEEP_GOOD, SLEEP_WARN_BELOW, SLEEP_WARN_ABOVE,
+    CALORIES_GOOD, CALORIES_WARN_BELOW, CALORIES_WARN_ABOVE,
+    SLEEP_CRITICAL_LOW, SLEEP_LOW,
+    HR_HIGH_CRITICAL, HR_HIGH_WARN,
+    STEPS_CRITICAL_LOW, STEPS_LOW,
+)
 
 
 # =========================================================================
@@ -725,12 +735,10 @@ def _tier_label(tier: str) -> str:
 
 def today_tiers(log: dict) -> dict:
     return {
-        "hr": _tier(log["heart_rate_avg"], (60, 85), warn_below=50, warn_above=95),
-        "steps": _tier(log["steps"], (7000, 12000), warn_below=4000, warn_above=20000),
-        "sleep": _tier(log["sleep_hours"], (7.0, 9.0), warn_below=5.5, warn_above=10.5),
-        "calories": _tier(
-            log["calories_burned"], (1800, 2500), warn_below=1500, warn_above=3000
-        ),
+        "hr":       _tier(log["heart_rate_avg"], HR_GOOD,       warn_below=HR_WARN_BELOW,       warn_above=HR_WARN_ABOVE),
+        "steps":    _tier(log["steps"],           STEPS_GOOD,   warn_below=STEPS_WARN_BELOW),
+        "sleep":    _tier(log["sleep_hours"],     SLEEP_GOOD,   warn_below=SLEEP_WARN_BELOW,    warn_above=SLEEP_WARN_ABOVE),
+        "calories": _tier(log["calories_burned"], CALORIES_GOOD, warn_below=CALORIES_WARN_BELOW, warn_above=CALORIES_WARN_ABOVE),
     }
 
 
@@ -815,22 +823,11 @@ def _trend_color(direction: str) -> str:
 def _compute_trends(rows: list[dict]) -> dict:
     if len(rows) < 2:
         return {k: "stable" for k in ["hr", "steps", "sleep", "calories"]}
-
-    def direction(vals, invert=False) -> str:
-        mid = len(vals) // 2
-        a = sum(vals[:mid]) / max(1, mid)
-        b = sum(vals[mid:]) / max(1, len(vals) - mid)
-        if a == 0: return "stable"
-        delta = (b - a) / abs(a)
-        if delta > 0.05: return "declining" if invert else "improving"
-        if delta < -0.05: return "improving" if invert else "declining"
-        return "stable"
-
     return {
-        "hr": direction([r["heart_rate_avg"] for r in rows], invert=True),
-        "steps": direction([r["steps"] for r in rows]),
-        "sleep": direction([r["sleep_hours"] for r in rows]),
-        "calories": direction([r["calories_burned"] for r in rows]),
+        "hr":       compute_trend_hr([r["heart_rate_avg"]   for r in rows]),
+        "steps":    compute_trend(   [r["steps"]            for r in rows]),
+        "sleep":    compute_trend(   [r["sleep_hours"]      for r in rows]),
+        "calories": compute_trend(   [r["calories_burned"]  for r in rows]),
     }
 
 
@@ -1003,23 +1000,23 @@ def highlight_items(log: dict, prev: dict | None) -> list[tuple[str, str]]:
     out: list[tuple[str, str]] = []
     hr, steps, sleep = log["heart_rate_avg"], log["steps"], log["sleep_hours"]
 
-    if sleep < 5.5:
+    if sleep < SLEEP_CRITICAL_LOW:
         out.append((ALERT, t("hl_sleep_bad", h=sleep)))
-    elif sleep < 7.0:
+    elif sleep < SLEEP_LOW:
         out.append((WARN, t("hl_sleep_low", h=sleep)))
     else:
         out.append((GOOD, t("hl_sleep_ok", h=sleep)))
 
-    if hr > 95:
+    if hr > HR_HIGH_CRITICAL:
         out.append((ALERT, t("hl_hr_high", hr=hr)))
-    elif hr > 85:
+    elif hr > HR_HIGH_WARN:
         out.append((WARN, t("hl_hr_mid", hr=hr)))
     else:
         out.append((GOOD, t("hl_hr_ok", hr=hr)))
 
-    if steps < 4000:
+    if steps < STEPS_CRITICAL_LOW:
         out.append((ALERT, t("hl_steps_low", s=steps)))
-    elif steps < 7000:
+    elif steps < STEPS_LOW:
         out.append((WARN, t("hl_steps_mid", s=steps)))
     else:
         out.append((GOOD, t("hl_steps_ok", s=steps)))
